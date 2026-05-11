@@ -4,22 +4,57 @@ import re
 import logging
 from google import genai
 from google.genai import Client
-from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    import streamlit as st
+    # Use Streamlit secrets on cloud
+    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+except:
+    # Fallback for local development without streamlit
+    from dotenv import load_dotenv
+    load_dotenv()
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configure Gemini client
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+if GEMINI_API_KEY:
+    client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+    client = None
 
 
 def load_prompt():
     """Load the scraping prompt template"""
-    with open("prompts/scraper_prompt.txt", "r", encoding="utf-8") as f:
-        return f.read()
+    import sys
+    import os
+
+    # Try multiple possible paths for the prompt file
+    possible_paths = [
+        "prompts/scraper_prompt.txt",
+        os.path.join(os.path.dirname(__file__), "..", "prompts", "scraper_prompt.txt"),
+        "/mount/src/ai-scraper/prompts/scraper_prompt.txt"
+    ]
+
+    for path in possible_paths:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+
+    # If no file found, use a minimal default prompt
+    return DEFAULT_PROMPT
+
+DEFAULT_PROMPT = '''
+You are an expert web scraper. Extract product data from this HTML based on the instruction.
+
+Instruction: {instruction}
+
+HTML: {html}
+
+Return JSON with fields: offerName, offerPrice, offerImageUrl, offerSource, description
+'''
 
 
 def extract_json(text):
@@ -239,6 +274,9 @@ def generate_plan(html, instruction):
     Uses semantic understanding + CSS selectors for robust extraction.
     """
     try:
+        if client is None:
+            raise ValueError("GEMINI_API_KEY is not configured. Please set it in Streamlit secrets.")
+
         prompt_template = load_prompt()
 
         # Truncate HTML if too long (Gemini has token limits)
