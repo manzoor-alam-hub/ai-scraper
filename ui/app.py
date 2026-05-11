@@ -1,6 +1,6 @@
 import streamlit as st
-import requests
 import json
+from services.scraper_service import run_ai_scraper
 
 st.set_page_config(page_title="AI Scraper Tool", page_icon="🧠", layout="wide")
 
@@ -12,20 +12,20 @@ This tool uses AI to scrape data from websites, including dynamic JavaScript sit
 # Sidebar for configuration
 with st.sidebar:
     st.header("⚙️ Configuration")
-    
+
     st.subheader("Dynamic Content Settings")
     dynamic_mode = st.selectbox(
         "Dynamic Mode",
         ["auto", "enabled", "disabled"],
         help="Auto: Detect dynamic content automatically\nEnabled: Force dynamic mode\nDisabled: Use static mode"
     )
-    
+
     pagination = st.checkbox(
         "Handle Pagination",
         value=False,
         help="Enable to scrape multiple pages (if detected)"
     )
-    
+
     if pagination:
         max_pages = st.slider(
             "Max Pages",
@@ -36,7 +36,7 @@ with st.sidebar:
         )
     else:
         max_pages = 1
-    
+
     timeout = st.slider(
         "Timeout (seconds)",
         min_value=10,
@@ -44,7 +44,7 @@ with st.sidebar:
         value=60,
         help="Page load timeout in seconds"
     )
-    
+
     st.subheader("Advanced Options")
     debug_mode = st.checkbox("Debug Mode", value=False)
 
@@ -111,13 +111,13 @@ with col2:
     - Enable Dynamic Mode
     - Increase timeout for slow-loading sites
     - Use pagination for multi-page content
-    
+
     **Common dynamic sites:**
     - React/Angular/Vue applications
     - Single Page Applications (SPA)
     - Infinite scroll pages
     - Lazy-loaded content
-    
+
     **Troubleshooting:**
     - If scraping fails, try increasing timeout
     - Check browser console for errors
@@ -129,144 +129,117 @@ if st.button("🚀 Run Scraper", type="primary", use_container_width=True):
     if not url:
         st.error("Please enter a URL")
         st.stop()
-    
+
     if not instruction:
         st.error("Please enter scraping instructions")
         st.stop()
-    
-    # Prepare request payload
-    payload = {
+
+    # Prepare parameters
+    dynamic_mode_param = None
+    if dynamic_mode == "enabled":
+        dynamic_mode_param = True
+    elif dynamic_mode == "disabled":
+        dynamic_mode_param = False
+
+    timeout_ms = timeout * 1000
+
+    # Show configuration
+    config_display = {
         "url": url,
         "instruction": instruction,
-        "timeout": timeout * 1000  # Convert to milliseconds
+        "dynamic_mode": dynamic_mode if dynamic_mode == "auto" else dynamic_mode_param,
+        "pagination": pagination,
+        "max_pages": max_pages,
+        "timeout_ms": timeout_ms
     }
-    
-    # Add dynamic mode configuration
-    if dynamic_mode == "enabled":
-        payload["dynamic_mode"] = True
-    elif dynamic_mode == "disabled":
-        payload["dynamic_mode"] = False
-    # "auto" means don't include the field (let backend decide)
-    
-    if pagination:
-        payload["pagination"] = True
-        payload["max_pages"] = max_pages
-    
-    # Show configuration
+
     with st.expander("📋 Request Configuration", expanded=True):
-        st.json(payload)
-    
-    # Make API request
-    with st.spinner("🔄 Scraping in progress..."):
+        st.json(config_display)
+
+    # Run scraper directly (no API call needed)
+    with st.spinner("🔄 Scraping in progress... This may take a minute."):
         try:
-            res = requests.post(
-                "http://127.0.0.1:8000/scrape",
-                json=payload,
-                timeout=timeout + 30  # Add buffer for processing
+            result = run_ai_scraper(
+                url=url,
+                instruction=instruction,
+                dynamic_mode=dynamic_mode_param,
+                pagination=pagination,
+                max_pages=max_pages,
+                timeout=timeout_ms
             )
-            
+
             # Display results
             st.subheader("📊 Results")
-            
-            if res.status_code == 200:
-                try:
-                    data = res.json()
-                    
-                    # Display success message
-                    st.success(data.get("message", "Scraping completed!"))
-                    
-                    # Show summary
-                    if "summary" in data:
-                        summary = data["summary"]
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Total Items", summary.get("total_items", 0))
-                        with col2:
-                            st.metric("Success Rate", f"{summary.get('success_rate', 0)}%")
-                        with col3:
-                            st.metric("Status", data.get("status", "unknown"))
-                    
-                    # Show configuration used
-                    if "configuration" in data:
-                        with st.expander("⚙️ Configuration Used"):
-                            st.json(data["configuration"])
-                    
-                    # Show AI plan
-                    if "plan" in data:
-                        with st.expander("🤖 AI-Generated Scraping Plan"):
-                            st.json(data["plan"])
-                    
-                    # Show data sample
-                    if "data_sample" in data and data["data_sample"]:
-                        st.subheader("📋 Extracted Data (Sample)")
-                        st.dataframe(data["data_sample"], use_container_width=True)
-                        
-                        # Show download button for full data
-                        if "file_saved" in data:
-                            st.info(f"Full data saved to: `{data['file_saved']}`")
-                            
-                            # Try to load and offer download
-                            try:
-                                with open(data["file_saved"], "r", encoding="utf-8") as f:
-                                    json_data = f.read()
-                                
-                                st.download_button(
-                                    label="📥 Download Full JSON",
-                                    data=json_data,
-                                    file_name="scraped_data.json",
-                                    mime="application/json"
-                                )
-                            except:
-                                pass
-                    else:
-                        st.warning("No data extracted. The selectors may not have matched any elements.")
-                    
-                    # Show metadata if available
-                    if "metadata" in data:
-                        with st.expander("📈 Extraction Metadata"):
-                            st.json(data["metadata"])
-                    
-                    # Show raw response in debug mode
-                    if debug_mode:
-                        with st.expander("🔍 Raw Response"):
-                            st.code(json.dumps(data, indent=2), language="json")
-                    
-                except json.JSONDecodeError:
-                    st.error("Failed to parse JSON response")
-                    st.code(res.text)
+
+            if result.get("status") == "success" or result.get("status") == "fallback":
+                # Display success message
+                st.success(result.get("message", "Scraping completed!"))
+
+                # Show summary
+                if "summary" in result:
+                    summary = result["summary"]
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Items", summary.get("total_items", 0))
+                    with col2:
+                        st.metric("Success Rate", f"{summary.get('success_rate', 0)}%")
+                    with col3:
+                        st.metric("Status", result.get("status", "unknown"))
+
+                # Show configuration used
+                if "configuration" in result:
+                    with st.expander("⚙️ Configuration Used"):
+                        st.json(result["configuration"])
+
+                # Show AI plan
+                if "plan" in result:
+                    with st.expander("🤖 AI-Generated Scraping Plan"):
+                        st.json(result["plan"])
+
+                # Show data sample
+                data_sample = result.get("data_sample", result.get("data", []))
+                if data_sample:
+                    st.subheader("📋 Extracted Data (Sample)")
+                    st.dataframe(data_sample[:10], use_container_width=True)
+
+                    # Show download button for full data
+                    normalized_data = result.get("normalized_sample", result.get("normalized_data", []))
+
+                    if normalized_data:
+                        st.download_button(
+                            label="📥 Download Full JSON",
+                            data=json.dumps(normalized_data, indent=2),
+                            file_name="scraped_data.json",
+                            mime="application/json"
+                        )
+                    elif data_sample:
+                        st.download_button(
+                            label="📥 Download Full JSON",
+                            data=json.dumps(data_sample, indent=2),
+                            file_name="scraped_data.json",
+                            mime="application/json"
+                        )
+                else:
+                    st.warning("No data extracted. The selectors may not have matched any elements.")
+
+                # Show metadata if available
+                if "metadata" in result:
+                    with st.expander("📈 Extraction Metadata"):
+                        st.json(result["metadata"])
+
+                # Show raw response in debug mode
+                if debug_mode:
+                    with st.expander("🔍 Raw Response"):
+                        st.code(json.dumps(result, indent=2), language="json")
+
             else:
-                st.error(f"API Error: {res.status_code}")
-                st.text("Response:")
-                st.code(res.text)
-                
-        except requests.exceptions.Timeout:
-            st.error(f"Request timed out after {timeout + 30} seconds. Try increasing the timeout.")
-        except requests.exceptions.ConnectionError:
-            st.error("Cannot connect to the API server. Make sure the backend is running.")
-            st.code("Start the backend with: uvicorn app.main:app --reload")
+                st.error(f"Scraping failed: {result.get('message', 'Unknown error')}")
+                if "error" in result:
+                    st.code(str(result["error"]))
+
         except Exception as e:
             st.error(f"Error: {str(e)}")
-
-# Health check
-if st.sidebar.button("🔍 Check API Health", type="secondary"):
-    try:
-        health_res = requests.get("http://127.0.0.1:8000/health", timeout=5)
-        if health_res.status_code == 200:
-            st.sidebar.success("✅ API is healthy")
-            st.sidebar.json(health_res.json())
-        else:
-            st.sidebar.error(f"API returned {health_res.status_code}")
-    except:
-        st.sidebar.error("❌ Cannot connect to API")
-
-# Configuration info
-if st.sidebar.button("📋 Show Default Config", type="secondary"):
-    try:
-        config_res = requests.get("http://127.0.0.1:8000/config", timeout=5)
-        if config_res.status_code == 200:
-            st.sidebar.json(config_res.json())
-    except:
-        st.sidebar.error("Cannot fetch configuration")
+            st.info("If you're running this on Streamlit Cloud, the site may be blocking requests or requires a longer timeout.")
 
 # Footer
 st.markdown("---")
