@@ -2,22 +2,36 @@ import os
 import json
 import re
 import logging
+from dotenv import load_dotenv
 from google import genai
 from google.genai import Client
 
-try:
-    import streamlit as st
-    # Use Streamlit secrets on cloud
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
-except:
-    # Fallback for local development without streamlit
-    from dotenv import load_dotenv
-    load_dotenv()
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# Load .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Try to get API key from multiple sources
+def get_api_key():
+    # 1. Try Streamlit secrets (for cloud deployment)
+    try:
+        import streamlit as st
+        key = st.secrets.get("GEMINI_API_KEY", "")
+        if key:
+            return key
+    except:
+        pass
+
+    # 2. Try environment variable (for local development)
+    key = os.getenv("GEMINI_API_KEY", "")
+    if key:
+        return key
+
+    return ""
+
+GEMINI_API_KEY = get_api_key()
 
 # Configure Gemini client
 if GEMINI_API_KEY:
