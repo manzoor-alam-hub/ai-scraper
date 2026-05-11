@@ -1,1 +1,1 @@
-playwright
+# No system packages needed - using httpx for HTTP requests
