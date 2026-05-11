@@ -1,5 +1,11 @@
 import streamlit as st
 import json
+import sys
+import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from services.scraper_service import run_ai_scraper
 
 st.set_page_config(page_title="AI Scraper Tool", page_icon="🧠", layout="wide")
