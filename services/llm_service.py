@@ -291,15 +291,8 @@ def generate_plan(html, instruction):
         logger.debug(f"HTML preview length: {len(html_preview)} chars")
 
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "temperature": 0.1,
-                "thinking_config": {
-                    "thinking_budget": 1024
-                }
-            }
+            model="gemini-2.0-flash",
+            contents=prompt
         )
 
         logger.info("AI response received, extracting JSON...")
